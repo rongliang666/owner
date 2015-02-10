@@ -1,2 +1,13 @@
 1 查看进程精确的起始时间：
 ps -p xx -o lstart
+
+2,find 和mv结合使用
+find ./ -name "*" -exec mv {} /dstdir/ \;
+
+3，core文件设置
+ulimit -a 查看设置
+ulimit -c xx 设置core文件大小。
+ulimit -c unlimited core文件无大小限制
+
+设置core文件路径， procname, sig名，时间，进程名
+echo "/data/dump/core-%e-%s-%t.%p" >/proc/sys/kernel/core_pattern 
