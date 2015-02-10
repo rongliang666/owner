@@ -11,3 +11,24 @@ ulimit -c unlimited core文件无大小限制
 
 设置core文件路径， procname, sig名，时间，进程名
 echo "/data/dump/core-%e-%s-%t.%p" >/proc/sys/kernel/core_pattern 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+mysql语句
+创建触发器
+CREATE TRIGGER 触发器名 BEFORE|AFTER 触发事件
+ON 表名 FOR EACH ROW 执行语句
+ CREATE TRIGGER trig1 AFTER INSERT
+    ON work FOR EACH ROW
+    INSERT INTO time VALUES(NOW());
