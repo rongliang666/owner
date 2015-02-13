@@ -32,3 +32,7 @@ ON 表名 FOR EACH ROW 执行语句
  CREATE TRIGGER trig1 AFTER INSERT
     ON work FOR EACH ROW
     INSERT INTO time VALUES(NOW());
+	
+
+显示创建表的语句
+show create table xxx;
