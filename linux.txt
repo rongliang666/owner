@@ -13,7 +13,14 @@ ulimit -c unlimited core文件无大小限制
 echo "/data/dump/core-%e-%s-%t.%p" >/proc/sys/kernel/core_pattern 
 
 
-
+删除大量小文件
+rsync --delete-before -a -H -v --progress --stats DEST SRC
+--delete-before    接收者在传输之前进行删除操作
+-progress     在传输时显示传输过程
+-a       归档模式 表示以递归方式传输文件，并保持所有文件属性
+-r        对子目录以递归方式处理
+-H      保持硬连接的文件
+-v       详细输出模式  
 
 
 
