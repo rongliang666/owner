@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <iostream>
 #include <stdlib.h>
+#include "comm_tool.h"
 
 using namespace std;
 
@@ -43,18 +44,38 @@ void AcceptErrCB(struct evconnlistener *listener, void* ctx)
      event_base_loopexit(base, NULL);
 }
 
-int main()
+int main(int argc, char** argv)
 {
+    if (argc != 2)
+    {
+        std::cout <<"need too argv\n";
+        return 0;
+    }
+
+    CFileLog msgLog;
+    CConfig oCfg;
+    if (!oCfg.LoadConfig(argv[1]))
+    {
+        std::cout <<"load config failed," << argv[1] << std::endl;
+        return 0;
+    }
+
+    CValue iport = oCfg.GetValue("tcp", "port", 20000);
+    CValue sLogPath = oCfg.GetValue("comm", "log", "./");
+    msgLog.Init((std::string)sLogPath+"/"+argv[0]+"_msg", 1024*1024*100, 5, false);
+    msgLog.Write("in server_ver2");
+    msgLog.Write("port: %d" ,(uint16_t)iport) ;
+    msgLog.Write("sLogPath :%s", ((std::string)sLogPath).c_str());
+
     struct event_base* base;
     struct evconnlistener* listener;
     struct sockaddr_in sin;
 
-    int port = 20000;
 
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
     sin.sin_addr.s_addr = htonl(0);
-    sin.sin_port =htons(port);
+    sin.sin_port =htons(iport);
 
     base = event_base_new();
     if (!base)
