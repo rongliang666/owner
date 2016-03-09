@@ -11,6 +11,7 @@
 using namespace std;
 
 typedef void (*TimerFunc)();
+typedef void (*SingalFun)();
 
 class cTcpConn
 {
@@ -216,7 +217,86 @@ class cTimer
 
 class cSignal
 {
+    public:
+        cSignal()
+        {
+            m_ptrBase = NULL;
+            m_mapSignal.clear();
+        }
 
+        ~cSignal()
+        {
+            std::map<int, STSignal*>::iterator iter;
+            for (iter=m_mapSignal.begin(); iter!=m_mapSignal.end(); iter++)
+            {
+                if (iter->second != NULL)
+                {
+                    delete iter->second;
+                    iter->second = NULL;
+                }
+            }    
+
+            std::map<int, struct event*>::iterator iterevent;
+            for (iterevent=m_mapEvents.begin(); iterevent!=m_mapEvents.end(); iterevent++)
+            {
+                if (iterevent->second != NULL)
+                {
+                    event_free(iterevent->second);
+                    iterevent->second = NULL;
+                }
+            }
+        }
+
+        bool Init(struct event_base* ptr)
+        {
+            m_ptrBase = ptr;
+            if (ptr == NULL)
+            {
+                std::cout <<"Init failed. ptr is NULL\n";
+                return false;
+            }
+
+            return true;
+        }
+
+        bool SetSignal(int signo, SingalFun func)
+        {
+           STSignal* ptr = new STSignal;
+           ptr->signal = signo;
+           ptr->func = func;
+            struct event* signal_int;
+            signal_int = evsignal_new(m_ptrBase, signo, SignalCB, ptr);
+            if (signal_int == NULL)
+            {
+                std::cout <<"SetSignal failed, evsignal_new return null\n";
+                return false;
+            }
+
+            m_mapSignal[signo] = ptr;
+            m_mapEvents[signo] = signal_int;
+            event_add(signal_int, NULL);
+
+            return true;
+        }
+
+        typedef struct stSignal
+        {
+            int signal;
+            SingalFun  func;
+        }STSignal;
+
+    private:
+        static void SignalCB(evutil_socket_t fd, short event, void *arg)
+        {
+            STSignal* ptr = (STSignal* )arg;
+            std::cout <<"in SignalCB func. signalno:" << ptr->signal;
+            ptr->func();
+        }
+
+    private:
+        event_base* m_ptrBase;
+        std::map<int, STSignal*> m_mapSignal; 
+        std::map<int, struct event*> m_mapEvents;
 };
 
 class cTask
