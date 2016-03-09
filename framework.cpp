@@ -10,15 +10,16 @@
 
 using namespace std;
 
+typedef void (*TimerFunc)();
+
 class cTcpConn
 {
     public:
-        cTcpConn(string& sIp, uint16_t iPort):m_sIp(sIp), m_iPort(iPort)
+        cTcpConn()
         {
             memset(&m_sin, 0, sizeof(m_sin));
-            m_sin.sin_family = AF_INET;
-            m_sin.sin_addr.s_addr = inet_addr(sIp.c_str());
-            m_sin.sin_port =htons(iPort);
+            m_ptrBase  = NULL;
+            m_ptrListener = NULL;
         }
 
         ~cTcpConn()
@@ -36,8 +37,16 @@ class cTcpConn
             }
         }
 
-        bool InitTcp()
+        bool Init(std::string& sIp, uint16_t iPort, struct event_base* ptr)
         {
+            m_sIp = sIp;
+            m_iPort = iPort;
+
+            m_sin.sin_family = AF_INET;
+            m_sin.sin_addr.s_addr = inet_addr(sIp.c_str());
+            m_sin.sin_port  = htons(iPort);
+            m_ptrBase = ptr;
+
             if (m_ptrBase == NULL)
             {
                 return false;
@@ -50,62 +59,10 @@ class cTcpConn
                 return 0;
             }
 
-        }
-
-        bool InitTimer()
-        {
-            if (m_ptrBase == NULL)
-            {
-                return false;
-            }
-
-            struct timeval tv = {1, 0};
-            struct event* ev = NULL;
-            ev = event_new(m_ptrBase, -1, EV_PERSIST, TimeCallBack, ev);
-            if (ev == NULL)
-            {
-                return false;
-            }
-
-            evtimer_add(ev, &tv);
-        }
-
-        bool InitSignal()
-        {
-            if (m_ptrBase == NULL)
-            {
-                return false;
-            }
-        }
-
-        bool Init()
-        {
-            m_ptrBase = event_base_new();
-            if (!m_ptrBase)
-            {
-                cout << "event_base_new failed\n";
-                return 0;
-            }
-
-            InitTcp();
-            InitTimer();
-            InitSignal();
-        }
-
-        bool RunDispatch()
-        {
             evconnlistener_set_error_cb(m_ptrListener, AcceptErrCB);
-            event_base_dispatch(m_ptrBase);
-
         }
+
     private:
-        static void TimeCallBack(evutil_socket_t fd, short event, void* opt)
-        {
-            struct timeval tv = {1, 0};
-            //evtimer_add((struct event*)(opt), &tv);
-            std::cout<<"TimeCallBack func\n";
-        }
-
             static void echo_read_cb(struct bufferevent *bev, void *ctx)
             {
                 std::cout <<"echo_read_cb\n";
@@ -172,10 +129,111 @@ class cTimer
         cTimer()
         {
             m_ptrBase = NULL;
+            m_mapTimers.clear();
+            m_mapEvents.clear();
         }
 
         ~cTimer()
-        {}
+        {
+            std::map<std::string, struct event*>::iterator iter;
+            for (iter=m_mapEvents.begin(); iter!=m_mapEvents.end(); iter++)
+            {
+                if (iter->second != NULL)
+                {
+                    event_free(iter->second);
+                    iter->second = NULL;
+                }
+            }
+
+            std::map<std::string, st_Timer*>::iterator iterTimer;
+            for (iterTimer=m_mapTimers.begin(); iterTimer!=m_mapTimers.end(); iterTimer++)
+            {
+                if (iterTimer->second != NULL)
+                {
+                    delete iterTimer->second;
+                    iterTimer->second = NULL;
+                }
+            }
+        }
+
+        bool Init(struct event_base* ptr)
+        {
+            m_ptrBase = ptr;
+            if (m_ptrBase == NULL)
+            {
+                cout << "event_base_new failed\n";
+                return false;
+            }
+
+            return true;
+        }
+
+        bool SetTimer(std::string sName, struct timeval tv, TimerFunc func)
+        {
+            st_Timer* t = new st_Timer ;
+            t->name = sName;
+            t->tv = tv;
+            t->func = func;
+
+            if (m_ptrBase  == NULL)
+            {
+                std::cout <<"m_ptrBase NULL\n";
+                return false;
+            }
+
+            struct event* ev = NULL;
+            ev = event_new(m_ptrBase, -1, EV_PERSIST, TimeCallBack, t);
+            if (ev == NULL)
+            {
+                return false;
+            }
+
+            m_mapTimers[sName] = t;
+            m_mapEvents[sName] = ev;
+            event_add(ev, &t->tv);
+        }
+
+        typedef struct stTimer
+        {
+            std::string name;
+            struct timeval tv;
+            TimerFunc func;
+        }st_Timer;
+
+    private:
+        static void TimeCallBack(evutil_socket_t fd, short event, void* opt)
+        {
+            st_Timer* ptr = (st_Timer*)opt;
+            std::cout<<"time name:" << ptr->name << "\tin TimeCallBack func\n";
+            ptr->func();
+        }
+
+    private:
+        struct event_base* m_ptrBase;
+        std::map<std::string, st_Timer*> m_mapTimers;
+        std::map<std::string, struct event*> m_mapEvents;
+};
+
+class cSignal
+{
+
+};
+
+class cTask
+{
+    public:
+        cTask()
+        {
+            m_ptrBase = NULL;
+        }
+
+        virtual ~cTask()
+        {
+            if (m_ptrBase != NULL)
+            {
+                event_base_free(m_ptrBase);
+            }
+        }
 
         bool Init()
         {
@@ -189,55 +247,48 @@ class cTimer
             return true;
         }
 
-        bool SetTimer(std::string sName, struct timeval tv)
+        bool InitConn(std::string& sIp, uint16_t iPort)
         {
-            st_Timer t;
-            t.name = sName;
-            t.tv = tv;
-            m_mapTimers[sName] = t;
-
-            if (m_ptrBase  == NULL)
-            {
-                std::cout <<"m_ptrBase NULL\n";
-                return false;
-            }
-
-            struct event* ev = NULL;
-            ev = event_new(m_ptrBase, -1, EV_PERSIST, TimeCallBack, &t);
-            if (ev == NULL)
-            {
-                return false;
-            }
-
-            m_mapEvents[sName] = ev;
-            event_add(ev, &t.tv);
+            conn.Init(sIp, iPort, m_ptrBase);
         }
 
-        bool RunDispatch(void)
+        bool InitTimer()
         {
+            timer.Init(m_ptrBase);
+        }
+
+        bool SetTimer(std::string& sName, struct timeval val, TimerFunc func)
+        {
+            timer.SetTimer(sName, val, func);
+        }
+
+        bool RunDispatch()
+        {
+            if (m_ptrBase == NULL)
+            {
+                std::cout << "RunDispatch failed. NULL\n";
+                return false;
+            }
+
             event_base_dispatch(m_ptrBase);
-        }
-
-        typedef struct stTimer
-        {
-            std::string name;
-            struct timeval tv;
-        }st_Timer;
-
-    private:
-        static void TimeCallBack(evutil_socket_t fd, short event, void* opt)
-        {
-            st_Timer* ptr = (st_Timer*)opt;
-            //evtimer_add((struct event*)(opt), &tv);
-            std::cout<<"time name:" << ptr->name << "\tin TimeCallBack func\n";
+            return true;
         }
 
     private:
+        cTcpConn conn;
+        cTimer timer;
         struct event_base* m_ptrBase;
-        std::map<std::string, st_Timer> m_mapTimers;
-        std::map<std::string, struct event*> m_mapEvents;
-
 };
+
+void Test()
+{
+    std::cout <<"TimerFunc test\n";
+}
+
+void Test2()
+{
+    std::cout <<"TimerFunc Test2\n";
+}
 
 int main(int argc, char** argv)
 {
@@ -264,17 +315,19 @@ int main(int argc, char** argv)
 
     std::string sIp = "127.0.0.1";
 
-    cTcpConn conn(sIp, iport);
-    conn.Init();
-
-    std::cout <<"after cTcpConn\n";
-    cTimer t;
+    cTask task;
+    task.Init();
+    task.InitConn(sIp, iport);
+    task.InitTimer();
     std::string name = "timer1";
     struct timeval tval = {1,0};
-    t.Init();
-    t.SetTimer(name, tval);
-    conn.RunDispatch();
-    t.RunDispatch();
+    task.SetTimer(name, tval, Test);
+    name = "timer2";
+    tval.tv_sec = 5;
+    tval.tv_usec = 0;
+    task.SetTimer(name, tval, Test2);
+
+    task.RunDispatch();
     
     return 0;
 }
