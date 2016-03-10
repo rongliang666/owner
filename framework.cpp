@@ -11,7 +11,7 @@
 using namespace std;
 
 typedef void (*TimerFunc)();
-typedef void (*SingalFun)();
+typedef void (*SignalFunc)();
 
 class cTcpConn
 {
@@ -222,6 +222,7 @@ class cSignal
         {
             m_ptrBase = NULL;
             m_mapSignal.clear();
+            m_mapEvents.clear();
         }
 
         ~cSignal()
@@ -259,7 +260,7 @@ class cSignal
             return true;
         }
 
-        bool SetSignal(int signo, SingalFun func)
+        bool SetSignal(int signo, SignalFunc func)
         {
            STSignal* ptr = new STSignal;
            ptr->signal = signo;
@@ -282,7 +283,7 @@ class cSignal
         typedef struct stSignal
         {
             int signal;
-            SingalFun  func;
+            SignalFunc func;
         }STSignal;
 
     private:
@@ -337,9 +338,19 @@ class cTask
             timer.Init(m_ptrBase);
         }
 
+        bool InitSignal()
+        {
+            signal.Init(m_ptrBase);
+        }
+
         bool SetTimer(std::string& sName, struct timeval val, TimerFunc func)
         {
             timer.SetTimer(sName, val, func);
+        }
+
+        bool SetSignal(int sign, SignalFunc func)
+        {
+            signal.SetSignal(sign, func);
         }
 
         bool RunDispatch()
@@ -357,6 +368,7 @@ class cTask
     private:
         cTcpConn conn;
         cTimer timer;
+        cSignal signal;
         struct event_base* m_ptrBase;
 };
 
@@ -368,6 +380,11 @@ void Test()
 void Test2()
 {
     std::cout <<"TimerFunc Test2\n";
+}
+
+void SignalTest()
+{
+    std::cout <<"int SignalTest\n";
 }
 
 int main(int argc, char** argv)
@@ -399,6 +416,8 @@ int main(int argc, char** argv)
     task.Init();
     task.InitConn(sIp, iport);
     task.InitTimer();
+    task.InitSignal();
+
     std::string name = "timer1";
     struct timeval tval = {1,0};
     task.SetTimer(name, tval, Test);
@@ -406,6 +425,8 @@ int main(int argc, char** argv)
     tval.tv_sec = 5;
     tval.tv_usec = 0;
     task.SetTimer(name, tval, Test2);
+
+    task.SetSignal(SIGINT, SignalTest);
 
     task.RunDispatch();
     
