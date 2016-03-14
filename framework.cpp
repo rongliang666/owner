@@ -13,6 +13,91 @@ using namespace std;
 typedef void (*TimerFunc)();
 typedef void (*SignalFunc)();
 
+class  cPackageByHead
+{
+    enum 
+    {
+            PKG_HEAD_MARK=0x02,
+            PKG_TAIL_MARK=0x03,
+    };
+
+    enum 
+    {
+                MAX_PKG_SIZE=(unsigned short)0xffff,
+    };
+
+    public:
+    cPackageByHead(){}
+    ~cPackageByHead(){}
+
+    static inline int HasWholePkg(const char* pszData, const int iDataSize, int& iRealPkgLen, int& iPkgLen)
+    {
+        int iRe = -2;
+        if (iDataSize <= 0)
+        {
+            return -1;
+        }
+
+        if (iDataSize <= 3)
+        {
+            iRe = -1;
+            if ( *pszData != PKG_HEAD_MARK )
+            {
+                iRe = -2;
+            }
+        }
+        else
+        {
+            iPkgLen = ntohs(*((unsigned short*)(pszData+1)));
+            {
+                if ( iDataSize >= iPkgLen && iPkgLen >= 4  )
+                {
+                    if ( *(pszData+iPkgLen-1) == PKG_TAIL_MARK )
+                    {
+                        iRealPkgLen = iPkgLen - 4;
+                        iRe = 0;
+                    }
+                    else
+                    {
+                        iRe = -2;
+                    }
+                }
+                else
+                {
+                    iRe = -1;
+                    if ( *pszData != PKG_HEAD_MARK || iPkgLen < 4 )
+                    {
+                        iRe = -2;
+                    }
+                }
+            }
+        }
+       
+       return iRe; 
+    }
+
+    static inline const char* MakeSendPkg(std::string& sSendBuf, const char* pszData, const int iDataSize, int& iSendDataSize)
+    {
+        if ( iDataSize > MAX_PKG_SIZE-4 || iDataSize <= 0 )
+        {
+            return NULL;
+        }
+
+        sSendBuf.resize(iDataSize+4);
+        sSendBuf[0] = PKG_HEAD_MARK;
+        sSendBuf[iDataSize+3] = PKG_TAIL_MARK;
+        *((unsigned short*)(sSendBuf.data()+1)) = htons(iDataSize+4);
+        memcpy((char*)sSendBuf.data()+3, pszData, iDataSize);
+        iSendDataSize = (int)sSendBuf.size();
+        return sSendBuf.data();
+    }
+
+    inline static const char* GetRealPkgData(const char* pszData, const size_t nDataSize)
+    {
+        return pszData+3;
+    }
+};
+
 class cTcpConn
 {
     public:
@@ -21,6 +106,8 @@ class cTcpConn
             memset(&m_sin, 0, sizeof(m_sin));
             m_ptrBase  = NULL;
             m_ptrListener = NULL;
+            m_ptrInFifo = NULL;
+            m_ptrOutFifo = NULL;
         }
 
         ~cTcpConn()
@@ -36,9 +123,20 @@ class cTcpConn
                 event_base_free(m_ptrBase);
                 m_ptrBase = NULL;
             }
+            if (m_ptrInFifo != NULL)
+            {
+                delete m_ptrInFifo;
+                m_ptrInFifo = NULL;
+            }
+
+            if (m_ptrOutFifo != NULL)
+            {
+                delete m_ptrOutFifo;
+                m_ptrOutFifo = NULL;
+            }
         }
 
-        bool Init(std::string& sIp, uint16_t iPort, struct event_base* ptr)
+        bool Init(std::string& sIp, uint16_t iPort, struct event_base* ptr, int iInSize, int iOutSize)
         {
             m_sIp = sIp;
             m_iPort = iPort;
@@ -60,15 +158,39 @@ class cTcpConn
                 return 0;
             }
 
+            m_ptrInFifo = new  CFIFOBuffer;
+            if (m_ptrInFifo == NULL)
+            {
+                cout <<"new CFIFOBuffer failed.\n";
+                return false;
+            }
+            m_ptrInFifo->Init(iInSize);
+
+            m_ptrOutFifo = new CFIFOBuffer;
+            if (m_ptrOutFifo == NULL)
+            {
+                cout <<"new CFIFOBuffer failed.\n";
+                return false;
+            }
+            m_ptrOutFifo->Init(iOutSize);
+
             evconnlistener_set_error_cb(m_ptrListener, AcceptErrCB);
         }
 
     private:
+            
             static void echo_read_cb(struct bufferevent *bev, void *ctx)
             {
                 std::cout <<"echo_read_cb\n";
-                char buf[1000];
+                char buf[1];
+                char sbuf[1024*1024];
+                memset(sbuf, 0, sizeof(sbuf));
+                int count = 0;
+                int pos = 0;
             
+                while(1)
+                {
+
                 struct evbuffer *input = bufferevent_get_input(bev);
                 int n = bufferevent_read(bev, buf, sizeof(buf));
                 if (n <= 0)
@@ -78,11 +200,30 @@ class cTcpConn
                 }
                 else
                 {
-                    buf[n] = '\0';
-                    std::cout <<"bufferevent_read  msg: " << buf << std::endl;
+                    int32_t iWholeFlag = 0;
+                    int32_t nPkgLen = 0;
+                    int32_t nRealPkgLen = 0;
+                    memcpy(sbuf+pos, buf, n);
+                    pos += n;
+                    std::cout <<"count is " <<count << std::endl;
+                    count++;
+                    if (iWholeFlag=cPackageByHead::HasWholePkg(sbuf, pos, nRealPkgLen, nPkgLen) == 0)
+                    {
+                        const char* pstRealPkgData = cPackageByHead::GetRealPkgData(sbuf, sizeof(sbuf));
+                        std::string s(pstRealPkgData, nRealPkgLen);
+                        std::cout <<"real pkg:" << s << std::endl;
+                        memset(sbuf, 0, sizeof(sbuf));
+                        pos = 0;
+                    }
+
+                    //buf[n] = '\0';
+                    //std::cout <<"bufferevent_read  msg: " << buf << std::endl;
                 }
+                }
+
+                //sleep(10000);
             
-                struct evbuffer *output = bufferevent_get_output(bev);
+                //struct evbuffer *output = bufferevent_get_output(bev);
             }
             
             static void echo_event_cb(struct bufferevent *bev, short events, void *ctx)
@@ -122,6 +263,8 @@ class cTcpConn
         uint16_t m_iPort;
         struct event_base* m_ptrBase;
         struct evconnlistener* m_ptrListener;
+        CFIFOBuffer* m_ptrInFifo;
+        CFIFOBuffer* m_ptrOutFifo;
 };
 
 class cTimer
@@ -328,9 +471,9 @@ class cTask
             return true;
         }
 
-        bool InitConn(std::string& sIp, uint16_t iPort)
+        bool InitConn(std::string& sIp, uint16_t iPort, int iInSize, int iOutSize)
         {
-            conn.Init(sIp, iPort, m_ptrBase);
+            conn.Init(sIp, iPort, m_ptrBase, iInSize, iOutSize);
         }
 
         bool InitTimer()
@@ -414,19 +557,21 @@ int main(int argc, char** argv)
 
     cTask task;
     task.Init();
-    task.InitConn(sIp, iport);
+    task.InitConn(sIp, iport, 1024*1024*100, 1024*1024*100);
     task.InitTimer();
     task.InitSignal();
 
     std::string name = "timer1";
     struct timeval tval = {1,0};
     task.SetTimer(name, tval, Test);
+    /*
     name = "timer2";
     tval.tv_sec = 5;
     tval.tv_usec = 0;
     task.SetTimer(name, tval, Test2);
 
     task.SetSignal(SIGINT, SignalTest);
+    */
 
     task.RunDispatch();
     
