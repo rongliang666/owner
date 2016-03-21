@@ -211,13 +211,14 @@ class cTcpConn
                     {
                         const char* pstRealPkgData = cPackageByHead::GetRealPkgData(sbuf, sizeof(sbuf));
                         std::string s(pstRealPkgData, nRealPkgLen);
-                        std::cout <<"real pkg:" << s << std::endl;
+                        //m_ptrInFifo->Write(s);
+                        std::string sout;
+                        //m_ptrInFifo->Read(sout);
+                        std::cout <<"real pkg:" << sout << std::endl;
                         memset(sbuf, 0, sizeof(sbuf));
                         pos = 0;
                     }
 
-                    //buf[n] = '\0';
-                    //std::cout <<"bufferevent_read  msg: " << buf << std::endl;
                 }
                 }
 
@@ -349,6 +350,7 @@ class cTimer
         {
             st_Timer* ptr = (st_Timer*)opt;
             std::cout<<"time name:" << ptr->name << "\tin TimeCallBack func\n";
+
             ptr->func();
         }
 
@@ -459,15 +461,19 @@ class cTask
             }
         }
 
-        bool Init()
+        bool Init(std::string sLogPath)
         {
+            msglog.Init(sLogPath, 1024*1024*10, 5, false);
+
             m_ptrBase = event_base_new();
             if (!m_ptrBase)
             {
                 cout << "event_base_new failed\n";
                 return false;
             }
-
+            
+            const char* ptr = event_base_get_method(m_ptrBase);
+            msglog.Write("event_base_get_method get base use(%s)", ptr);
             return true;
         }
 
@@ -504,7 +510,11 @@ class cTask
                 return false;
             }
 
-            event_base_dispatch(m_ptrBase);
+            while (event_base_dispatch(m_ptrBase) == 0)
+            {
+                event_base_dispatch(m_ptrBase);
+            }
+
             return true;
         }
 
@@ -513,6 +523,7 @@ class cTask
         cTimer timer;
         cSignal signal;
         struct event_base* m_ptrBase;
+        CFileLog msglog; 
 };
 
 void Test()
@@ -556,7 +567,11 @@ int main(int argc, char** argv)
     std::string sIp = "127.0.0.1";
 
     cTask task;
-    task.Init();
+    std::string sTaskLogPath = sLogPath.data() ;
+    sTaskLogPath += "/";
+    sTaskLogPath += argv[0];
+    sTaskLogPath += "_taskmsg";
+    task.Init(sTaskLogPath);
     task.InitConn(sIp, iport, 1024*1024*100, 1024*1024*100);
     task.InitTimer();
     task.InitSignal();
@@ -570,8 +585,8 @@ int main(int argc, char** argv)
     tval.tv_usec = 0;
     task.SetTimer(name, tval, Test2);
 
-    task.SetSignal(SIGINT, SignalTest);
     */
+    task.SetSignal(SIGINT, SignalTest);
 
     task.RunDispatch();
     
