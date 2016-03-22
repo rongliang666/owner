@@ -461,9 +461,15 @@ class cTask
             }
         }
 
+        static void EventLog(int severity, const char *msg)
+        {
+            msglog.Write(msg);
+        }
+
         bool Init(std::string sLogPath)
         {
             msglog.Init(sLogPath, 1024*1024*10, 5, false);
+            event_set_log_callback(EventLog);
 
             m_ptrBase = event_base_new();
             if (!m_ptrBase)
@@ -523,7 +529,7 @@ class cTask
         cTimer timer;
         cSignal signal;
         struct event_base* m_ptrBase;
-        CFileLog msglog; 
+        static CFileLog msglog; 
 };
 
 void Test()
@@ -541,6 +547,7 @@ void SignalTest()
     std::cout <<"int SignalTest\n";
 }
 
+CFileLog cTask::msglog; 
 int main(int argc, char** argv)
 {
     if (argc != 2)
