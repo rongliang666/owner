@@ -1,6 +1,6 @@
 
 #include "thread.h"
-
+//ver1.0
     void* RunThread(void* arg);
     int cThread::GetThreadNo()
     {
