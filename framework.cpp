@@ -6,12 +6,17 @@
 #include <errno.h>
 #include <iostream>
 #include <stdlib.h>
+#include "boost/thread/thread.hpp"
+#include "boost/thread/condition.hpp"
+#include "boost/thread/mutex.hpp"
+#include "boost/function.hpp"
 #include "comm_tool.h"
 
 using namespace std;
 
 typedef void (*TimerFunc)();
 typedef void (*SignalFunc)();
+
 
 class  cPackageByHead
 {
@@ -101,6 +106,7 @@ class  cPackageByHead
 class cTcpConn
 {
     public:
+
         cTcpConn()
         {
             memset(&m_sin, 0, sizeof(m_sin));
@@ -151,7 +157,7 @@ class cTcpConn
                 return false;
             }
 
-            m_ptrListener = evconnlistener_new_bind(m_ptrBase, (void(*)(struct evconnlistener* listener, evutil_socket_t fd, struct sockaddr *address, int socklen, void* ctx))&cTcpConn::AcceptCB, NULL, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1, (struct sockaddr*)&m_sin, sizeof(m_sin));
+            m_ptrListener = evconnlistener_new_bind(m_ptrBase, (void(*)(struct evconnlistener* listener, evutil_socket_t fd, struct sockaddr *address, int socklen, void* ctx))&cTcpConn::AcceptCB, this, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1, (struct sockaddr*)&m_sin, sizeof(m_sin));
             if (!m_ptrListener)
             {
                 cout <<"evconnlistener_new_bind failed.\n";
@@ -173,16 +179,35 @@ class cTcpConn
                 return false;
             }
             m_ptrOutFifo->Init(iOutSize);
-
+            boost::function<void()> CallBackFunc;
+            CallBackFunc = boost::bind(&cTcpConn::ConsumeInFifo, this);
+            
+            boost::thread thread_one(CallBackFunc);
             evconnlistener_set_error_cb(m_ptrListener, AcceptErrCB);
         }
 
     private:
+            void ConsumeInFifo(void)
+            {
+                while (1)
+                {
+
+                boost::mutex::scoped_lock lock(m_InFifoMutex);
+                m_InFifoCond.wait(lock);
+
+                std::string s;
+                m_ptrInFifo->Read(s);
+                std::cout <<"ConsumeInFifo read : " << s << std::endl;
+                lock.unlock();
+                }
+            }
             
             static void echo_read_cb(struct bufferevent *bev, void *ctx)
             {
+                cTcpConn* ptr = (cTcpConn*)ctx;
+
                 std::cout <<"echo_read_cb\n";
-                char buf[1];
+                char buf[1024];
                 char sbuf[1024*1024];
                 memset(sbuf, 0, sizeof(sbuf));
                 int count = 0;
@@ -207,17 +232,21 @@ class cTcpConn
                     pos += n;
                     std::cout <<"count is " <<count << std::endl;
                     count++;
+
+
                     if (iWholeFlag=cPackageByHead::HasWholePkg(sbuf, pos, nRealPkgLen, nPkgLen) == 0)
                     {
                         const char* pstRealPkgData = cPackageByHead::GetRealPkgData(sbuf, sizeof(sbuf));
                         std::string s(pstRealPkgData, nRealPkgLen);
-                        //m_ptrInFifo->Write(s);
-                        std::string sout;
-                        //m_ptrInFifo->Read(sout);
-                        std::cout <<"real pkg:" << sout << std::endl;
+                        boost::mutex::scoped_lock lock(ptr->m_InFifoMutex);
+                        ptr->m_ptrInFifo->Write(s);
+                        
+                        std::cout <<"in echo_read_cb real pkg:" << s << std::endl;
                         memset(sbuf, 0, sizeof(sbuf));
                         pos = 0;
                     }
+
+                    ptr->m_InFifoCond.notify_one();
 
                 }
                 }
@@ -229,6 +258,7 @@ class cTcpConn
             
             static void echo_event_cb(struct bufferevent *bev, short events, void *ctx)
             {
+                cTcpConn* ptr = (cTcpConn*)ctx;
                 std::cout <<"echo_event_cb\n";
                 if (events & BEV_EVENT_ERROR)
                 {
@@ -240,12 +270,14 @@ class cTcpConn
                     bufferevent_free(bev);
                 }
             }
+
             static void AcceptCB(struct evconnlistener* listener, evutil_socket_t fd, struct sockaddr *address, int socklen, void* ctx)
             {
                 std::cout <<"AcceptCB\n";
+                cTcpConn* ptr = (cTcpConn*)ctx;
                 struct event_base *base = evconnlistener_get_base(listener);
                 struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
-                bufferevent_setcb(bev, echo_read_cb, NULL, echo_event_cb, NULL);
+                bufferevent_setcb(bev, echo_read_cb, NULL, echo_event_cb, ctx);
                 bufferevent_enable(bev, EV_READ|EV_WRITE);
             }
             
@@ -264,9 +296,17 @@ class cTcpConn
         uint16_t m_iPort;
         struct event_base* m_ptrBase;
         struct evconnlistener* m_ptrListener;
+
+        boost::mutex m_InFifoMutex;
+        boost::condition m_InFifoCond;
+
+        boost::mutex m_OutFifoMutex;
+        boost::condition m_OutFifoCond;
+
         CFIFOBuffer* m_ptrInFifo;
         CFIFOBuffer* m_ptrOutFifo;
 };
+
 
 class cTimer
 {
@@ -584,7 +624,7 @@ int main(int argc, char** argv)
     task.InitSignal();
 
     std::string name = "timer1";
-    struct timeval tval = {1,0};
+    struct timeval tval = {10,0};
     task.SetTimer(name, tval, Test);
     /*
     name = "timer2";
@@ -593,7 +633,7 @@ int main(int argc, char** argv)
     task.SetTimer(name, tval, Test2);
 
     */
-    task.SetSignal(SIGINT, SignalTest);
+//    task.SetSignal(SIGINT, SignalTest);
 
     task.RunDispatch();
     
