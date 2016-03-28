@@ -11,6 +11,8 @@
 #include "boost/thread/mutex.hpp"
 #include "boost/function.hpp"
 #include "comm_tool.h"
+//compile whit cmd
+// g++ framework.cpp  -levent -lboost_thread /data/own_comm/lib/libcomm_tool.a  -o server 
 
 using namespace std;
 
