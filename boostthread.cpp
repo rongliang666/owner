@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <iostream>
 
+//boost thread
 class cThread
 {
     public:
