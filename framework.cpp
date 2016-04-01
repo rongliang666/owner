@@ -11,8 +11,6 @@
 #include "boost/thread/mutex.hpp"
 #include "boost/function.hpp"
 #include "comm_tool.h"
-//compile whit cmd
-// g++ framework.cpp  -levent -lboost_thread /data/own_comm/lib/libcomm_tool.a  -o server 
 
 using namespace std;
 
@@ -191,17 +189,16 @@ class cTcpConn
     private:
             void ConsumeInFifo(void)
             {
-                while (1)
-                {
-
                 boost::mutex::scoped_lock lock(m_InFifoMutex);
-                m_InFifoCond.wait(lock);
+                if (m_ptrInFifo->GetSize() == 0)
+                {
+                    std::cout <<"waiting in ConsumeInFifo\n";
+                    m_InFifoCond.wait(lock);
+                }
 
                 std::string s;
                 m_ptrInFifo->Read(s);
                 std::cout <<"ConsumeInFifo read : " << s << std::endl;
-                lock.unlock();
-                }
             }
             
             static void echo_read_cb(struct bufferevent *bev, void *ctx)
@@ -218,44 +215,38 @@ class cTcpConn
                 while(1)
                 {
 
-                struct evbuffer *input = bufferevent_get_input(bev);
-                int n = bufferevent_read(bev, buf, sizeof(buf));
-                if (n <= 0)
-                {
-                    std::cout <<"bufferevent_read error :" << n << std::endl;
-                    return;
-                }
-                else
-                {
-                    int32_t iWholeFlag = 0;
-                    int32_t nPkgLen = 0;
-                    int32_t nRealPkgLen = 0;
-                    memcpy(sbuf+pos, buf, n);
-                    pos += n;
-                    std::cout <<"count is " <<count << std::endl;
-                    count++;
-
-
-                    if (iWholeFlag=cPackageByHead::HasWholePkg(sbuf, pos, nRealPkgLen, nPkgLen) == 0)
+                    struct evbuffer *input = bufferevent_get_input(bev);
+                    int n = bufferevent_read(bev, buf, sizeof(buf));
+                    if (n <= 0)
                     {
-                        const char* pstRealPkgData = cPackageByHead::GetRealPkgData(sbuf, sizeof(sbuf));
-                        std::string s(pstRealPkgData, nRealPkgLen);
-                        boost::mutex::scoped_lock lock(ptr->m_InFifoMutex);
-                        ptr->m_ptrInFifo->Write(s);
-                        
-                        std::cout <<"in echo_read_cb real pkg:" << s << std::endl;
-                        memset(sbuf, 0, sizeof(sbuf));
-                        pos = 0;
+                        std::cout <<"bufferevent_read error :" << n << std::endl;
+                        return;
                     }
+                    else
+                    {
+                        int32_t iWholeFlag = 0;
+                        int32_t nPkgLen = 0;
+                        int32_t nRealPkgLen = 0;
+                        memcpy(sbuf+pos, buf, n);
+                        pos += n;
+                        std::cout <<"count is " <<count << std::endl;
+                        count++;
 
-                    ptr->m_InFifoCond.notify_one();
+                        if (iWholeFlag=cPackageByHead::HasWholePkg(sbuf, pos, nRealPkgLen, nPkgLen) == 0)
+                        {
+                            const char* pstRealPkgData = cPackageByHead::GetRealPkgData(sbuf, sizeof(sbuf));
+                            std::string s(pstRealPkgData, nRealPkgLen);
+                            boost::mutex::scoped_lock lock(ptr->m_InFifoMutex);
+                            ptr->m_ptrInFifo->Write(s);
+                            
+                            std::cout <<"in echo_read_cb real pkg:" << s << std::endl;
+                            memset(sbuf, 0, sizeof(sbuf));
+                            pos = 0;
+                        }
 
+                        ptr->m_InFifoCond.notify_one();
+                    }
                 }
-                }
-
-                //sleep(10000);
-            
-                //struct evbuffer *output = bufferevent_get_output(bev);
             }
             
             static void echo_event_cb(struct bufferevent *bev, short events, void *ctx)

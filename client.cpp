@@ -7,6 +7,9 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>  
 
+#include <boost/thread/thread.hpp>
+#include "boost/function.hpp"
+
 class  cPackageByHead
 {
     enum 
@@ -94,7 +97,7 @@ class  cPackageByHead
 
 #define  PORT 20000
  #define  MAXDATASIZE 100
-int main(void)
+void Func(int i)
 {
     int  sockfd, num;  
     char  buf[MAXDATASIZE];  
@@ -102,7 +105,7 @@ int main(void)
     struct sockaddr_in server;  
     if((sockfd=socket(AF_INET, SOCK_STREAM, 0))==-1){  
     printf("socket()error\n");  
-    return 0;
+    return ;
     }
 
     bzero(&server,sizeof(server));  
@@ -111,10 +114,11 @@ int main(void)
     server.sin_addr.s_addr = inet_addr("127.0.0.1");
     if(connect(sockfd,(struct sockaddr *)&server,sizeof(server))==-1){ 
     printf("connect()error\n");  
-    return 0;
+    return ;
     }
 
-    char str[100] = "hello world\n";
+    char str[100] = "hello world" ;
+    snprintf(str, sizeof(str), "hello world %d\n", i);
     std::string s;
     int len;
     cPackageByHead::MakeSendPkg(s, str, strlen(str), len);
@@ -122,5 +126,33 @@ int main(void)
     {
         std::cout <<"send failed\n";
     }
+
+    sleep(10);
     close(sockfd);
+
 }
+
+int main(void)
+{
+    boost::thread t1(boost::bind(&Func, 1));
+    boost::thread t2(boost::bind(&Func, 2));
+    boost::thread t3(boost::bind(&Func, 3));
+    boost::thread t4(boost::bind(&Func, 4));
+    boost::thread t5(boost::bind(&Func, 5));
+    boost::thread t6(boost::bind(&Func, 6));
+    boost::thread t7(boost::bind(&Func, 7));
+    boost::thread t8(boost::bind(&Func, 8));
+    boost::thread t9(boost::bind(&Func, 9));
+
+    t1.join();
+    t2.join();
+    t3.join();
+    t4.join();
+    t5.join();
+    t6.join();
+    t7.join();
+    t8.join();
+    t9.join();
+
+}
+
