@@ -12,6 +12,7 @@
 #include "boost/function.hpp"
 #include "comm_tool.h"
 
+//g++ framework.cpp  -levent -lboost_thread /data/own_comm/lib/libcomm_tool.a 
 using namespace std;
 
 typedef void (*TimerFunc)();
