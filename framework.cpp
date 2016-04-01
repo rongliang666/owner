@@ -104,6 +104,10 @@ class  cPackageByHead
     }
 };
 
+typedef boost::shared_mutex rwMutex;
+typedef boost::shared_lock<rwMutex> rMutex;
+typedef boost::unique_lock<rwMutex> wMutex;
+
 class cTcpConn
 {
     public:
