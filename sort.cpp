@@ -13,6 +13,11 @@ class cCompare
 
 };
 
+bool IsTrue(int i)
+{
+    return i<100;
+}
+
 void PrintV(std::vector<int>& v)
 {
     std::cout <<"**********************************\n";
@@ -30,13 +35,23 @@ int main()
     srand(time(NULL));
     for (int i=0; i<10; i++)
     {
-        int var = rand()%10000;
+        int var = rand()%200;
         v.push_back(var);
     }
     
     PrintV(v);
     //std::sort(v.begin(), v.end(), std::greater<int>());
-    std::sort(v.begin(), v.end(), cCompare());
+    //std::partial_sort(v.begin(), v.begin()+4, v.end(), cCompare());
+    //std::nth_element(v.begin(), v.begin()+4, v.end(), cCompare());
+     
+    std::vector<int>::iterator ret = remove_if(v.begin(), v.end(), IsTrue);
+    std::vector<int>::iterator  it = v.begin();
+    for (;it!=ret; ++it)
+    {
+        std::cout <<*it << '\t';
+    }
+
+    std::cout <<'\n';
     PrintV(v);
 
 }
